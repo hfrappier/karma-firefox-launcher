@@ -27,6 +27,8 @@ if (isWsl && which.sync('firefox', { nothrow: true })) {
   isWsl = false
 }
 
+// Snap on linux
+let isSnap = (process.platform === 'linux') && which.sync('firefox', {nothrow: true}).startsWith("/snap");
 /**
  * Takes a string from Windows' tasklist.exe with the following arguments:
  * `/FO CSV /NH /SVC` and returns an array of PIDs.
@@ -218,6 +220,21 @@ const FirefoxBrowser = function (baseBrowserDecorator, args, logger, emitter) {
   const safeExecSync = createSafeExecSync(log)
   let browserProcessPid
   let browserProcessPidWsl = []
+  const _snapProfileDir = process.env.HOME + "/Downloads/firefox.tmp" + this._tempDir;
+
+  if (isSnap) {
+    // this._tempDir will be created, but not used.
+    // Hijack the cleanup function and remove our folder first
+    const _clearTempDirAndReportDone = this._clearTempDirAndReportDone;
+    this._clearTempDirAndReportDone = function(error) {
+      try {
+        fs.rmdirSync(_snapProfileDir);
+      } catch(e) {
+        // fail silently
+      }
+      _clearTempDirAndReportDone.call(this, error)
+    }
+  }
 
   this._getPrefs = function (prefs) {
     if (typeof prefs !== 'object') {
@@ -233,7 +250,13 @@ const FirefoxBrowser = function (baseBrowserDecorator, args, logger, emitter) {
   this._start = function (url) {
     const self = this
     const command = args.command || this._getCommand()
-    const profilePath = args.profile || self._tempDir
+    const profilePath = (isSnap && _snapProfileDir) || args.profile || self._tempDir;
+
+    if (isSnap) {
+      log.warn('Snap environment detected: Using', profilePath, ' for profile')
+      fs.mkdirSync(_snapProfileDir, {recursive: true});
+    }
+
     const flags = args.flags || []
     let extensionsDir
 
